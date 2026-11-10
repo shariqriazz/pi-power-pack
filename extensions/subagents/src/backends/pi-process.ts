@@ -98,6 +98,8 @@ export const makeProcessSession = (task: SpawnTask): Effect.Effect<SubagentSessi
       Queue.offerUnsafe(events, event);
     };
 
+    // Aborted when the child exits or closes, so a question it asked does not stay pending forever.
+    const lifetime = new AbortController();
     const state = {
       closed: false,
       exited: false,
@@ -202,7 +204,7 @@ export const makeProcessSession = (task: SpawnTask): Effect.Effect<SubagentSessi
       const bridge = task.parent.bridge;
       if (!body || !bridge) return reply({ cancelled: true });
       try {
-        if (body.kind === "ask") reply({ value: await bridge.ask(body.question) });
+        if (body.kind === "ask") reply({ value: await bridge.ask(body.question, lifetime.signal) });
         else if (body.kind === "peers") reply({ value: JSON.stringify(bridge.listPeers()) });
         else if (body.kind === "peer") {
           await bridge.messagePeer(body.id, body.message);
@@ -277,6 +279,7 @@ export const makeProcessSession = (task: SpawnTask): Effect.Effect<SubagentSessi
       const onExit = () => {
         if (state.exited) return;
         state.exited = true;
+        lifetime.abort();
         failAll(exitError());
         if (!state.closed && !state.settled) {
           state.runError ??= exitError().message;
@@ -295,6 +298,7 @@ export const makeProcessSession = (task: SpawnTask): Effect.Effect<SubagentSessi
     yield* Effect.addFinalizer(() =>
       Effect.promise(async () => {
         state.closed = true;
+        lifetime.abort();
         // Closing stdin asks Pi for an orderly shutdown; escalate if it lingers.
         child.stdin?.end();
         const timeout = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms).unref?.());

@@ -297,3 +297,36 @@ test("/term stop accepts space- and comma-separated ids", async () => {
   }
   await hooks.get("session_shutdown")?.();
 });
+
+test("write_terminal waits for output after its input even when older output is unread", async () => {
+  const tools = new Map<string, any>();
+  const hooks = new Map<string, (...args: any[]) => any>();
+  extension({
+    registerTool: (definition: any) => tools.set(definition.name, definition),
+    registerCommand() {},
+    registerMessageRenderer() {},
+    on: addHook(hooks),
+    sendMessage() {},
+    sendUserMessage() {},
+  } as never);
+  const context = { cwd: process.cwd(), hasUI: false, isIdle: () => false, ui: {} };
+  hooks.get("session_start")?.({}, context);
+  hooks.get("agent_start")?.({}, context);
+  const script = `console.log("ready"); process.stdin.once("data", () => setTimeout(() => process.exit(0), 200));`;
+  await tools
+    .get("start_terminal")
+    .execute(
+      "s1",
+      { command: `${JSON.stringify(process.execPath)} -e '${script}'`, wait_ms: 0 },
+      undefined,
+      undefined,
+      context,
+    );
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  // cursor 0 leaves "ready" unread; the call must still wait for what the input produces (its echo).
+  const result = await tools
+    .get("write_terminal")
+    .execute("w1", { id: "term-1", input: "hello-input", cursor: 0, wait_ms: 3_000 }, undefined, undefined, context);
+  assert.match(result.content[0].text, /ready[\s\S]*hello-input/);
+  await hooks.get("session_shutdown")?.();
+});

@@ -182,12 +182,11 @@ export function escapeXml(text: string): string {
     .replace(/'/g, "&apos;");
 }
 
+// Every tag that wraps quoted session text in a summary request; quoted text must not close it early.
+const WRAPPER_TAG = /<(\/?)(conversation|previous-summary|kept-start|protected-facts)>/gi;
+
 export function sanitizeTagContent(text: string): string {
-  return text
-    .replace(/<\/conversation>/gi, "<\\/conversation>")
-    .replace(/<conversation>/gi, "<\\conversation>")
-    .replace(/<\/previous-summary>/gi, "<\\/previous-summary>")
-    .replace(/<previous-summary>/gi, "<\\previous-summary>");
+  return text.replace(WRAPPER_TAG, (_tag, slash: string, name: string) => `<\\${slash}${name}>`);
 }
 
 function extractTextContent(content: unknown): string {

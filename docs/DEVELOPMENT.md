@@ -45,7 +45,7 @@ Use `getAgentDir()` for user-level state and `CONFIG_DIR_NAME` for project-level
 
 ## Skills paired with extensions
 
-`package.json#pi.skills` declares `skills/background-terminals` and `skills/subagents`, and Pi loads them from the installed package. Do not copy them into the agent directory. When a paired extension's tools or delivery behavior change, update its skill in the same change.
+`package.json#pi.skills` declares `skills/background-terminals`, `skills/fusion`, and `skills/subagents`, and Pi loads them from the installed package. Do not copy them into the agent directory. When a paired extension's tools or delivery behavior change, update its skill in the same change.
 
 ## Upgrading Pi
 

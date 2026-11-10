@@ -101,7 +101,7 @@ export function isBlockedAddress(address: string): boolean {
   // IPv4-mapped and NAT64 addresses reach the embedded IPv4 destination.
   const embedded = /^(?:::ffff:|64:ff9b::)(\d+\.\d+\.\d+\.\d+)$/i.exec(address)?.[1];
   if (embedded) return BLOCKED.check(embedded, "ipv4");
-  const mappedHex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(address);
+  const mappedHex = /^(?:::ffff:|64:ff9b::)([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(address);
   if (mappedHex) {
     const high = Number.parseInt(mappedHex[1]!, 16);
     const low = Number.parseInt(mappedHex[2]!, 16);
@@ -204,16 +204,18 @@ function readBounded(res: http.IncomingMessage, maxBytes: number): Promise<{ byt
  * Keeps cookies for one fetch's redirect chain, because some sites (Google's docs among them) redirect
  * until a cookie comes back. Host-only and discarded after the call; Domain and Path are ignored.
  */
-function storeCookies(jar: Map<string, Map<string, string>>, host: string, setCookie: string[] | undefined): void {
+type CookieJar = Map<string, Map<string, { value: string; secure: boolean }>>;
+
+function storeCookies(jar: CookieJar, host: string, setCookie: string[] | undefined): void {
   for (const line of setCookie ?? []) {
     const [pair = "", ...attributes] = line.split(";");
     const eq = pair.indexOf("=");
     if (eq <= 0) continue;
     const name = pair.slice(0, eq).trim();
     const value = pair.slice(eq + 1).trim();
-    const cookies = jar.get(host) ?? new Map<string, string>();
+    const cookies = jar.get(host) ?? new Map<string, { value: string; secure: boolean }>();
     if (attributes.some((attribute) => /^\s*max-age\s*=\s*(0|-)/i.test(attribute))) cookies.delete(name);
-    else cookies.set(name, value);
+    else cookies.set(name, { value, secure: attributes.some((attribute) => /^\s*secure\s*$/i.test(attribute)) });
     jar.set(host, cookies);
   }
 }
@@ -226,11 +228,12 @@ function request(
   open: Set<http.ClientRequest>,
   allowPrivate: boolean,
   redirects = 0,
-  jar = new Map<string, Map<string, string>>(),
+  jar: CookieJar = new Map(),
 ): Promise<RawFetchResponse> {
   const transport = url.protocol === "https:" ? https : http;
-  const cookies = jar.get(url.host);
-  const cookie = cookies?.size ? [...cookies].map(([name, value]) => `${name}=${value}`).join("; ") : undefined;
+  // Secure cookies never travel over plain HTTP, such as after a same-host redirect from https to http.
+  const sendable = [...(jar.get(url.host) ?? [])].filter(([, entry]) => !entry.secure || url.protocol === "https:");
+  const cookie = sendable.length ? sendable.map(([name, entry]) => `${name}=${entry.value}`).join("; ") : undefined;
   return new Promise((resolve, reject) => {
     // Inside the executor so a blocked redirect target rejects instead of throwing.
     checkLiteralHost(url, allowPrivate);

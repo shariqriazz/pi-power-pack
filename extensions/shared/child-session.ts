@@ -24,6 +24,11 @@ export const CHILD_EXCLUDED_TOOL_NAMES = [
   "task",
   "reply_question",
   "ask_user",
+  // Goals belong to the main session; a child's own session has none of its goal state.
+  "create_goal",
+  "get_goal",
+  "update_goal_progress",
+  "update_goal",
 ] as const;
 
 /** Fresh SDK options avoid turning the denylist into an accidental allowlist. */

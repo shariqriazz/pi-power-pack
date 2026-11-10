@@ -1,6 +1,6 @@
 import type { ExtensionContext, KeybindingsManager, Theme } from "@earendil-works/pi-coding-agent";
-import { fuzzyFilter, Input, Key, matchesKey, truncateToWidth, visibleWidth, type TUI } from "@earendil-works/pi-tui";
-import { frameBottom, frameTop, framedRow, joinSides, padLine } from "./tui-dashboard.ts";
+import { fuzzyFilter, Input, Key, matchesKey, truncateToWidth, type TUI } from "@earendil-works/pi-tui";
+import { frameBottom, frameTop, framedRow, joinSides, padLine } from "../shared/tui-dashboard.ts";
 
 export type ModelPickerItem = {
   provider: string;
@@ -30,7 +30,6 @@ function formatContextSize(tokens?: number): string {
 export class ModelPickerComponent {
   private readonly tui: TUI;
   private readonly theme: Theme;
-  private readonly keys: KeybindingsManager;
   private readonly done: (result: string | undefined) => void;
   private readonly allItems: ModelPickerItem[];
   private readonly title: string;
@@ -43,14 +42,13 @@ export class ModelPickerComponent {
   constructor(
     tui: TUI,
     theme: Theme,
-    keys: KeybindingsManager,
+    _keys: KeybindingsManager,
     options: ModelPickerOptions,
     items: ModelPickerItem[],
     done: (result: string | undefined) => void,
   ) {
     this.tui = tui;
     this.theme = theme;
-    this.keys = keys;
     this.done = done;
     this.allItems = items;
     this.filteredItems = [...items];

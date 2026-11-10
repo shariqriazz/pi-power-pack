@@ -32,7 +32,9 @@ Tool descriptions, parameter descriptions, prompt snippets, and prompt guideline
 Pi packages (`@earendil-works/pi-*`) and `typebox` are optional peer dependencies; Pi provides them at runtime. Pinned development dependencies give typechecking and tests a reproducible API surface. Third-party runtime modules are normal dependencies:
 
 - `@lydell/node-pty` runs background terminals;
-- `effect` runs the subagent lifecycle.
+- `effect` runs the subagent lifecycle;
+- `node-html-markdown` and `node-html-parser` turn fetched HTML into Markdown for Web Fetch;
+- `sharp` converts, crops, and resizes images for Media Understanding and WebP Images.
 
 `bun.lock` is the lockfile CI installs from. `package-lock.json` is kept in sync for npm-based installs: Pi installs Git packages with `npm install`.
 
@@ -42,6 +44,8 @@ Installed package directories are treated as read-only. Writable state goes thro
 
 - Smart Compaction settings: `<agent-dir>/smart-compaction.json`
 - Input mode setting: `<agent-dir>/input-mode.json`
+- Media Understanding settings: `<agent-dir>/media-understanding.json`; copies of described images, kept for follow-up questions: `<agent-dir>/media-understanding/`
+- WebP Images settings: `<agent-dir>/webp-images.json`
 - Subagent configuration, catalog, run snapshots, and worktrees: under `getAgentDir()`
 - Goal and Task List state: branch-local Pi session entries
 - Project configuration: under Pi's `CONFIG_DIR_NAME`

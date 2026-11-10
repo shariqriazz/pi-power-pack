@@ -2062,8 +2062,13 @@ export default function piContextUsage(pi: ExtensionAPI) {
   pi.on("message_end", async () => markDirty());
   pi.on("session_compact", async () => markDirty());
 
+  // Only the session that mounted the card may change or remove it. Headless sessions, such as
+  // in-process subagents loading this extension, share these globals but never own the card.
+  let ownsCard = false;
+
   pi.on("session_start", async (_event, ctx) => {
     if (!ctx.hasUI) return;
+    ownsCard = true;
 
     const currentMode = g.__piContextUsageMode ?? DEFAULT_MODE;
     const config = loadContextUsageConfig(ctx.cwd, ctx.isProjectTrusted());
@@ -2110,6 +2115,7 @@ export default function piContextUsage(pi: ExtensionAPI) {
   });
 
   pi.on("model_select", async (event, ctx) => {
+    if (!ownsCard) return;
     g.__piContextUsageModel = toModelSummary(event.model);
     markDirty();
     g.__piContextUsageBlock?.invalidate();
@@ -2117,6 +2123,8 @@ export default function piContextUsage(pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", async (_event, ctx) => {
+    if (!ownsCard) return;
+    ownsCard = false;
     if (g.__piContextUsageInstallTimer) clearTimeout(g.__piContextUsageInstallTimer);
     g.__piContextUsageInstallTimer = undefined;
     const block = g.__piContextUsageBlock;

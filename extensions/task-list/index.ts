@@ -20,15 +20,7 @@ import {
   taskListText,
   taskListUpdateText,
 } from "./state.ts";
-import type {
-  TaskItem,
-  TaskListDetails,
-  TaskListInput,
-  TaskListSnapshot,
-  TaskListState,
-  TaskPriority,
-  TaskStatus,
-} from "./types.ts";
+import type { TaskItem, TaskListDetails, TaskListInput, TaskListSnapshot, TaskListState, TaskStatus } from "./types.ts";
 import { TASK_PRIORITIES, TASK_STATUSES } from "./types.ts";
 import { openTaskDashboard, taskGlyph } from "./ui.ts";
 
@@ -103,7 +95,6 @@ function nextUniqueId(state: TaskListState, content: string): string {
 
 export default function taskListExtension(pi: ExtensionAPI) {
   let state = emptyTaskListState();
-  let lastCtx: ExtensionContext | null = null;
   let finishedTimer: ReturnType<typeof setTimeout> | undefined;
   // Pi passes a fresh context to every event, so the linger timer is tied to a
   // presentation generation rather than context identity.
@@ -116,7 +107,6 @@ export default function taskListExtension(pi: ExtensionAPI) {
   }
 
   function updatePresentation(ctx: ExtensionContext): void {
-    lastCtx = ctx;
     cancelFinishedTimer();
     const generation = ++presentationGeneration;
     if (!ctx.hasUI || state.tasks.length === 0) {
@@ -159,7 +149,6 @@ export default function taskListExtension(pi: ExtensionAPI) {
   }
 
   function persist(ctx: ExtensionContext): void {
-    lastCtx = ctx;
     pi.appendEntry(TASK_LIST_ENTRY, { state: copyTaskListState(state) } satisfies TaskListSnapshot);
     updatePresentation(ctx);
   }
@@ -208,7 +197,6 @@ export default function taskListExtension(pi: ExtensionAPI) {
   }
 
   pi.on("session_start", async (_event, ctx) => {
-    lastCtx = ctx;
     state = restoreTaskList(ctx);
     updatePresentation(ctx);
   });
@@ -331,7 +319,6 @@ export default function taskListExtension(pi: ExtensionAPI) {
       return matches.length ? matches.map((value) => ({ value, label: value })) : null;
     },
     handler: async (args, ctx) => {
-      lastCtx = ctx;
       const command = args.trim().toLowerCase();
       if (!command || command === "status") {
         await runDashboard(ctx);
@@ -368,7 +355,6 @@ Send the first list as its own tool call in the same response as the first real 
     exposure: "model-only",
     parameters: TaskListParams,
     async execute(_toolCallId, params: TaskListInput, _signal, _onUpdate, ctx) {
-      lastCtx = ctx;
       if (params.tasks !== undefined) {
         replaceState(buildUpdatedTaskList(state, params), ctx);
       }

@@ -31,7 +31,7 @@ import {
   createChildResources,
   shutdownAndDisposeChildSession,
 } from "../../../shared/child-session.ts";
-import { createToolCallTimeoutGuard } from "../../../shared/tool-call-timeout.ts";
+import { createToolCallTimeoutGuard } from "../tool-call-timeout.ts";
 import { hideFusionSkill } from "../fusion.ts";
 import { makeProcessSession } from "./pi-process.ts";
 
@@ -63,7 +63,6 @@ const READ_CAPABILITY_TOOLS = new Set([
   "view_image",
   "ask_video",
   "ask_audio",
-  "get_goal",
   "task_list",
   "read_terminal",
   "list_terminals",

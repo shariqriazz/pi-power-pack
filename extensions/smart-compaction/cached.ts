@@ -57,6 +57,7 @@ function sameMessage(a: AgentMessage, b: AgentMessage): boolean {
   const left = a as any;
   const right = b as any;
   if (left.role !== right.role || left.timestamp !== right.timestamp) return false;
+  if (left.role === "custom") return left.customType === right.customType;
   return left.role !== "toolResult" || left.toolCallId === right.toolCallId;
 }
 

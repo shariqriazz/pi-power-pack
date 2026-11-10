@@ -5,7 +5,7 @@ import type {
   ExtensionUIContext,
   SessionBeforeCompactEvent,
 } from "@earendil-works/pi-coding-agent";
-import { openModelPicker } from "../shared/model-picker.ts";
+import { openModelPicker } from "./model-picker.ts";
 import {
   compactionThresholdTokens,
   loadSmartCompactionConfig,

@@ -22,6 +22,7 @@ import {
   type SessionEntry,
 } from "@earendil-works/pi-coding-agent";
 import type { SmartCompactionConfig } from "./config.ts";
+import { ACTIVE_TERMINALS, readSessionLines, RUNNING_SUBAGENTS, sessionKeyOf } from "../shared/session-published.ts";
 import { cachedInstruction, extendCapturedPayload, keptStart, messagesSince, type CapturedRequest } from "./cached.ts";
 import {
   CHECKPOINT_RESUMPTION_PREAMBLE,
@@ -225,28 +226,13 @@ export function isGeneratedOrLockfile(filePath: string): boolean {
 }
 
 /** Lines published by another extension through a global getter; best-effort, empty when absent. */
-function publishedLines(name: string): string[] {
-  try {
-    const fn = (globalThis as any)[name];
-    if (typeof fn === "function") {
-      const active = fn();
-      if (Array.isArray(active)) {
-        return active.filter((item): item is string => typeof item === "string" && Boolean(item.trim()));
-      }
-    }
-  } catch {
-    // Best-effort inspection.
-  }
-  return [];
-}
-
-export function getActiveBackgroundProcesses(): string[] {
-  return publishedLines("__pi_get_active_terminals");
+export function getActiveBackgroundProcesses(ctx: { sessionManager?: unknown }): string[] {
+  return readSessionLines(ACTIVE_TERMINALS, sessionKeyOf(ctx));
 }
 
 /** Background subagents that have not reported back, published by the Subagents extension. */
-export function getRunningSubagents(): string[] {
-  return publishedLines("__pi_get_running_subagents");
+export function getRunningSubagents(ctx: { sessionManager?: unknown }): string[] {
+  return readSessionLines(RUNNING_SUBAGENTS, sessionKeyOf(ctx));
 }
 
 const execFileAsync = promisify(execFile);
@@ -573,7 +559,8 @@ export function combineCompactionUsage(first?: Usage, second?: Usage): Usage | u
 
 export interface RunSmartCompactionOptions {
   event: SessionBeforeCompactEvent;
-  ctx: Pick<ExtensionContext, "model" | "modelRegistry" | "thinkingLevel" | "cwd">;
+  /** `sessionManager` selects the session whose running terminals and subagents the checkpoint lists. */
+  ctx: Pick<ExtensionContext, "model" | "modelRegistry" | "thinkingLevel" | "cwd"> & { sessionManager?: unknown };
   config: SmartCompactionConfig;
   /** Session tool definitions, used to declare tools the structured tail's turns called. */
   tools?: () => readonly ToolDefinitionSource[];
@@ -594,7 +581,8 @@ export interface SmartCompactionOutput {
   details?: SmartCompactionDetails;
 }
 
-// Per-message sizes, cached because the context hook sees the same message objects on every request.
+// Per-message sizes for one measuring pass. Pi clones messages for every context event, so entries
+// only hit within a call that measures the same objects again; they are not reused across requests.
 const messageSizes = new WeakMap<object, { tokens: number; bytes: number }>();
 
 /** Pi's local token estimate and the serialized byte size of `messages`. */
@@ -1212,8 +1200,8 @@ export async function runSmartCompaction(options: RunSmartCompactionOptions): Pr
   );
   const gitState = await getGitEngineeringState(ctx.cwd, signal);
   const activeDirtyFilesList = gitState.files.map((file) => file.path);
-  const activeBackgroundProcesses = getActiveBackgroundProcesses();
-  const runningSubagents = getRunningSubagents();
+  const activeBackgroundProcesses = getActiveBackgroundProcesses(ctx);
+  const runningSubagents = getRunningSubagents(ctx);
 
   const fileOpsXml = formatFileOperationsXml({
     readFiles: readFilesList,

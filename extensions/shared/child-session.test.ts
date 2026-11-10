@@ -107,6 +107,10 @@ test("child denylist keeps extension and workflow structured tools available", a
         "task",
         "reply_question",
         "ask_user",
+        "create_goal",
+        "get_goal",
+        "update_goal_progress",
+        "update_goal",
       ],
     );
     const allTools = new Set(session.getAllTools().map((tool) => tool.name));

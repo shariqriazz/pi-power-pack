@@ -36,20 +36,6 @@ function configuredKeys(
   return keybindings.getKeys(binding).join("/") || "unbound";
 }
 
-function statusState(status: TaskStatus): SemanticState {
-  switch (status) {
-    case "in_progress":
-      return "active";
-    case "completed":
-      return "success";
-    case "blocked":
-      return "error";
-    case "pending":
-    case "cancelled":
-      return "muted";
-  }
-}
-
 function statusColor(status: TaskStatus): "accent" | "success" | "error" | "muted" {
   switch (status) {
     case "in_progress":

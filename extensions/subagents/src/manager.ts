@@ -11,7 +11,6 @@
  * and issue fire-and-forget commands without touching the Effect runtime.
  */
 
-import { randomUUID } from "node:crypto";
 import { Context, Effect, Exit, Fiber, Layer, Result, Scope, Stream } from "effect";
 import type { SubagentBackend, SubagentSession } from "./backend.ts";
 import { BackendRegistry } from "./backend.ts";
@@ -94,7 +93,6 @@ export interface SubagentReadModel {
   peerMessages(): ReadonlyArray<PeerMessage>;
   recordPeerMessage(message: PeerMessage): void;
   clearWorktree(id: string): void;
-  retain(id: string, retained: boolean): void;
   /**
    * Register the settle hook. `consumed` is true when an active
    * wait_agent/close_agent is collecting the result (so it must not also be
@@ -153,7 +151,6 @@ const makeManager = Effect.gen(function* () {
   const entries = new Map<string, Entry>();
   const waitInterest = new Map<string, number>();
   const rollingBack = new Set<string>();
-  const retained = new Set<string>();
   const listeners = new Set<() => void>();
   /** One-shot nextChange waiters, swapped out before invocation so waiters
    * re-registering during notification are not visited in the same sweep. */
@@ -162,26 +159,12 @@ const makeManager = Effect.gen(function* () {
   const cleanups = new Set<Fiber.Fiber<unknown>>();
   const peerMessages: PeerMessage[] = [];
   let counter = 0;
-  const prewarmedIds: string[] = [];
-  const replenishIdPool = () => {
-    while (prewarmedIds.length < 16) {
-      prewarmedIds.push(`sa-${++counter}-${randomUUID().slice(0, 6)}`);
-    }
-  };
-  replenishIdPool();
-
+  // The extension passes catalog-safe ids; the counter serves callers that pass none.
   const allocateId = (preferredId?: string): string => {
-    if (preferredId && !entries.has(preferredId)) {
-      return preferredId;
-    }
-    if (prewarmedIds.length === 0) {
-      replenishIdPool();
-    }
-    const id = prewarmedIds.shift()!;
-    // Replenish in the background
-    if (prewarmedIds.length < 4) {
-      replenishIdPool();
-    }
+    if (preferredId && !entries.has(preferredId)) return preferredId;
+    let id: string;
+    do id = `sa-${++counter}`;
+    while (entries.has(id));
     return id;
   };
   const reservedByGroup = new Map<string, number>();
@@ -248,9 +231,7 @@ const makeManager = Effect.gen(function* () {
   const pruneSettled = () => {
     if (entries.size <= MAX_TRACKED) return;
     const candidates = [...entries.values()]
-      .filter(
-        (e) => e.snapshot.status !== "running" && !waitInterest.has(e.snapshot.id) && !retained.has(e.snapshot.id),
-      )
+      .filter((e) => e.snapshot.status !== "running" && !waitInterest.has(e.snapshot.id))
       .sort((a, b) => (a.snapshot.settledAt ?? a.snapshot.createdAt) - (b.snapshot.settledAt ?? b.snapshot.createdAt));
     for (const entry of candidates) {
       if (entries.size <= MAX_TRACKED) break;
@@ -653,10 +634,20 @@ const makeManager = Effect.gen(function* () {
         // both pass the check in that window. Cleared by RunStarted/settle,
         // or here when the backend rejects the send.
         entry.restarting = true;
+        // Report the restart as running right away, so send_message, check_agent, list_agents, and
+        // wait_agent do not show the previous run's settled result until RunStarted arrives.
+        const snapshot = entry.snapshot;
+        const previous = { status: snapshot.status, settledAt: snapshot.settledAt, errorText: snapshot.errorText };
+        snapshot.status = "running";
+        snapshot.settledAt = undefined;
+        snapshot.errorText = undefined;
+        notify(snapshot.id);
         return entry.session.send(text).pipe(
           Effect.onError(() =>
             Effect.sync(() => {
               entry.restarting = false;
+              Object.assign(snapshot, previous);
+              notify(snapshot.id);
             }),
           ),
         );
@@ -728,11 +719,6 @@ const makeManager = Effect.gen(function* () {
       if (!entry) return;
       entry.snapshot.meta = { ...entry.snapshot.meta, worktree: undefined };
       notify(id);
-    },
-    retain: (id, keep) => {
-      if (keep) retained.add(id);
-      else retained.delete(id);
-      pruneSettled();
     },
     setOnSettled: (hook) => {
       onSettled = hook;

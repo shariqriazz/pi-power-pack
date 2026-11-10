@@ -26,15 +26,22 @@ test("registers only the expected lifecycle handlers and command", () => {
   );
 });
 
-test("shutdown removes the injected panel, widget, and retained globals", async () => {
+test("only the session that mounted the card removes it, so a headless child cannot", async () => {
   const handlers = new Map<string, (event: any, ctx: any) => any>();
-  const pi = {
-    on(name: string, handler: (event: any, ctx: any) => any) {
-      handlers.set(name, handler);
+  piContextUsage({ on: (name: string, handler: any) => handlers.set(name, handler), registerCommand() {} } as never);
+  const child = new Map<string, (event: any, ctx: any) => any>();
+  piContextUsage({ on: (name: string, handler: any) => child.set(name, handler), registerCommand() {} } as never);
+  const widgets: Array<[string, unknown]> = [];
+  const ui = {
+    setWidget(name: string, value: unknown) {
+      widgets.push([name, value]);
     },
-    registerCommand() {},
+    theme: { fg: (_color: string, text: string) => text, bold: (text: string) => text },
   };
-  piContextUsage(pi as never);
+  await handlers.get("session_start")?.(
+    {},
+    { hasUI: true, cwd: "/tmp", model: undefined, isProjectTrusted: () => false, getSystemPrompt: () => "", ui },
+  );
   const block = {};
   const chat = { children: [block] };
   const renders: boolean[] = [];
@@ -46,20 +53,16 @@ test("shutdown removes the injected panel, widget, and retained globals", async 
       renders.push(force);
     },
   };
-  const widgets: Array<[string, unknown]> = [];
 
-  await handlers.get("session_shutdown")?.(
-    {},
-    {
-      hasUI: true,
-      ui: {
-        setWidget(name: string, value: unknown) {
-          widgets.push([name, value]);
-        },
-      },
-    },
-  );
+  // An in-process subagent loads this extension headless; its lifecycle must not touch the card.
+  await child.get("session_start")?.({}, { hasUI: false });
+  await child.get("model_select")?.({ model: { provider: "p", id: "m" } }, { hasUI: false });
+  await child.get("session_shutdown")?.({}, { hasUI: false });
+  assert.deepEqual(chat.children, [block]);
+  assert.equal(globals.__piContextUsageBlock, block);
 
+  widgets.length = 0;
+  await handlers.get("session_shutdown")?.({}, { hasUI: true, ui });
   assert.deepEqual(chat.children, []);
   assert.deepEqual(widgets, [["__pi_context_usage_capture", undefined]]);
   assert.deepEqual(renders, [true]);

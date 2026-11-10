@@ -254,11 +254,6 @@ export class SubagentDashboard implements Component {
     }
   }
 
-  private pad(text: string, width: number): string {
-    const truncated = truncateToWidth(text, width);
-    return truncated + " ".repeat(Math.max(0, width - visibleWidth(truncated)));
-  }
-
   private borderSegment(width: number, title: string): string {
     const theme = this.theme;
     const label = title ? ` ${truncateToWidth(title, Math.max(0, width - 3))} ` : "";

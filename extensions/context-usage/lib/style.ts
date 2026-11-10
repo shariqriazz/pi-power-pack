@@ -4,9 +4,8 @@
 // exists and for the one tone pi's theme has no faithful role for ("running").
 
 import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { homedir } from "node:os";
-import { OSC_SEQUENCE, rawIndexAtVisibleIndex, stripAnsi } from "./ansi.ts";
+import { OSC_SEQUENCE } from "./ansi.ts";
 
 /** Line-kind glyphs: one per line, gutter position (design language §1). */
 export const GLYPH = {
@@ -18,14 +17,6 @@ export const GLYPH = {
   section: "\u25b8", // ▸
   /** tool-block rail — the dim left edge that fuses a run of trace rows into one block */
   rail: "\u258f", // ▏
-} as const;
-
-/** Status scale — family-shared vocabulary (design language §1). */
-export const SCALE = {
-  cold: "\u25cb", // ○ cold / empty
-  hit: "\u25cf", // ● hit / full
-  partial: "\u25d1", // ◑ partial
-  miss: "\u25cc", // ◌ miss / broken
 } as const;
 
 /** The only inline fact separator (design language §5). */
@@ -119,9 +110,6 @@ function bold(theme: Theme | undefined, text: string): string {
 
 export const ELLIPSIS = "\u2026"; // …
 
-const MIN_HEAD_COLS = 6;
-const TAIL_RATIO = 0.55;
-
 // Replace an absolute home-directory prefix with ~ so boilerplate path heads stop eating
 // width (e.g. bash `cd /Users/me/... && ...` -> `cd ~/... && ...`). OSC sequences are
 // skipped: a read row's OSC 8 hyperlink carries a file:// URL containing the home path,
@@ -138,109 +126,4 @@ export function tildify(text: string): string {
   return text.replace(TILDIFY_PATTERN, (match) => (match.startsWith("\x1b") ? match : "~"));
 }
 
-// ANSI-aware middle truncation that protects the *tail* of the line — the basename +
-// :line-range for a path, or the operative end of a command — because that is where the
-// information distinguishing one row from the next lives. The cut snaps to a nearby "/"
-// or space boundary, and the ellipsis is dimmed so it reads as a UI marker rather than as
-// part of the path/command. Falls back to tail truncation only when the width is too
-// small to keep both ends.
-// Ink continuity across the cut (design language §5): the tail's opening SGR may
-// sit in the removed middle, which would leave the tail at the terminal default until
-// the next styled span opened. Replay the *net* SGR state active at the cut point —
-// one sequence per attribute, offs and full resets clearing their slots — so the tail
-// keeps its ink without echoing the whole styling history.
-function activeSgrAt(line: string, rawIndex: number): string {
-  const state = new Map<string, string>();
-  const sgr = /\x1b\[([0-9;]*)m/g;
-  let match: RegExpExecArray | null;
-  while ((match = sgr.exec(line)) && match.index < rawIndex) {
-    const params = match[1] ?? "";
-    if (params === "" || params === "0") {
-      state.clear();
-      continue;
-    }
-    const key =
-      params.startsWith("38") || params === "39" || /^(3[0-7]|9[0-7])$/.test(params)
-        ? "fg"
-        : params.startsWith("48") || params === "49" || /^(4[0-7]|10[0-7])$/.test(params)
-          ? "bg"
-          : params === "1" || params === "2" || params === "22"
-            ? "weight"
-            : params === "3" || params === "23"
-              ? "italic"
-              : params === "4" || params === "24"
-                ? "underline"
-                : params; // unknown/compound: replay verbatim, keyed by itself
-    const off = params === "39" || params === "49" || params === "22" || params === "23" || params === "24";
-    if (off) state.delete(key);
-    else state.set(key, match[0]);
-  }
-  return [...state.values()].join("");
-}
-
-export function middleTruncate(line: string, width: number, theme?: Theme): string {
-  const maxWidth = Math.max(1, width);
-  if (visibleWidth(line) <= maxWidth) return line;
-
-  const vis = stripAnsi(line);
-  const visLen = vis.length;
-  const ellipsisWidth = visibleWidth(ELLIPSIS);
-  const budget = Math.max(1, maxWidth - ellipsisWidth); // reserve columns for the ellipsis
-
-  const maxTail = Math.min(budget - MIN_HEAD_COLS, Math.max(12, Math.floor(budget * TAIL_RATIO)));
-  if (maxTail < 1) return truncateToWidth(line, maxWidth, ELLIPSIS);
-
-  // The cut is a column (design language §9.8): the tail is exactly `maxTail` wide and
-  // the head exactly fills the rest, so every line truncated to the same budget cuts at
-  // identical columns and fills the budget exactly. No content-dependent snapping — a
-  // mid-token cut beside a dim ellipsis is legible; a wandering ellipsis column is not.
-  const tailStart = visLen - maxTail;
-  const dimEllipsis = ink(theme, "dim", ELLIPSIS);
-  const tailRawStart = rawIndexAtVisibleIndex(line, tailStart);
-  const tailRaw = `${activeSgrAt(line, tailRawStart)}${line.slice(tailRawStart)}`;
-
-  const headEnd = budget - maxTail;
-  if (headEnd <= 0) return `${dimEllipsis}${tailRaw}`;
-
-  const headRaw = line.slice(0, rawIndexAtVisibleIndex(line, headEnd));
-  return `${headRaw}${RESET}${dimEllipsis}${tailRaw}`;
-}
-
-/** Quantities right (design language §5): body left, right-aligned suffix, ≥2-space gap
- * (§9.1 — the tail must not crowd the facts); the body middle-truncates and the suffix
- * wins when the width is starved. `reserve` (design language §9.8) is a minimum
- * right-side reservation — gap included — so callers can hold every body in a block to
- * the same budget regardless of each row's own suffix. */
-export function rightAlignSuffix(body: string, suffix: string, width: number, theme?: Theme, reserve = 0): string {
-  const maxWidth = Math.max(1, width);
-  const bodyText = body.trimEnd();
-  if (!suffix) {
-    const budget = maxWidth - reserve >= MIN_HEAD_COLS ? maxWidth - reserve : maxWidth;
-    return middleTruncate(bodyText, budget, theme);
-  }
-
-  const suffixWidth = visibleWidth(suffix);
-  if (suffixWidth >= maxWidth) return truncateToWidth(suffix, maxWidth, ELLIPSIS);
-
-  const bodyWidth = Math.max(0, maxWidth - Math.max(suffixWidth + 2, reserve));
-  const fittedBody = bodyWidth > 0 ? middleTruncate(bodyText, bodyWidth, theme) : "";
-  const gapWidth = Math.max(1, maxWidth - visibleWidth(fittedBody) - suffixWidth);
-  return `${fittedBody}${" ".repeat(gapWidth)}${suffix}`;
-}
-
 // --- severity (design language §6) -------------------------------------------------------
-
-/** Severity thresholds for tool result sizes, in chars (design language §6). */
-export type SizeThresholds = { warning: number; error: number };
-
-export const SIZE_THRESHOLDS: SizeThresholds = { warning: 10_000, error: 50_000 };
-
-/**
- * Tone for a result-size quantity: dim below the warning threshold so healthy rows
- * stay quiet; warning/error above so ballooned outputs jump out of the column.
- */
-export function sizeTone(chars: number, thresholds: SizeThresholds = SIZE_THRESHOLDS): Tone {
-  if (chars >= thresholds.error) return "error";
-  if (chars >= thresholds.warning) return "warning";
-  return "dim";
-}

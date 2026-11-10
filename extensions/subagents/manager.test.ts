@@ -202,6 +202,8 @@ test("send steers an idle subagent into another turn", async () => {
     assert.equal(afterFirst?.status, "done");
 
     await runTool(runtime, manager.send(snap.id, "Second turn"));
+    // Readers such as send_message and check_agent see the restart at once, not the previous result.
+    assert.equal(manager.view.get(snap.id)?.status, "running");
     // An immediate wait must observe the reserved restart rather than returning
     // the previous turn before RunStarted reaches the event pump.
     await runTool(runtime, manager.waitFor([snap.id]));

@@ -1,6 +1,4 @@
-import * as fs from "node:fs";
-import * as path from "node:path";
-import { spawn as spawnNodePty, type IDisposable, type IPty } from "@lydell/node-pty";
+import { spawn as spawnNodePty, type IPty } from "@lydell/node-pty";
 
 export interface UniversalPty {
   readonly pid: number;

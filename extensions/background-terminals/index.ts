@@ -10,6 +10,7 @@ import { formatSize, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { Markdown, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { clearActivitySource, setActivitySource } from "../shared/activity-dock.ts";
+import { ACTIVE_TERMINALS, publishSessionLines, sessionKeyOf } from "../shared/session-published.ts";
 import { settlementDelivery } from "../shared/settlement-delivery.ts";
 import { toolCallCard, toolResultCard } from "../shared/tool-card.ts";
 import { formatDurationMs, oneLine, sanitizeTerminalText, stateLabel } from "../shared/tui-dashboard.ts";
@@ -70,13 +71,6 @@ export default function backgroundTerminals(pi: ExtensionAPI) {
   const getManager = (): TerminalManager => {
     if (manager) return manager;
     manager = new TerminalManager();
-    (globalThis as any).__pi_get_active_terminals = () => {
-      if (!manager) return [];
-      return manager
-        .list()
-        .filter((s) => s.status === "running")
-        .map((s) => `${s.id}: "${oneLine(s.title)}" (pid ${s.pid})`);
-    };
     manager.setOnSettled((snapshot) => {
       try {
         settle(snapshot);
@@ -159,7 +153,16 @@ export default function backgroundTerminals(pi: ExtensionAPI) {
     );
   }
 
+  let unpublishTerminals: (() => void) | undefined;
   pi.on("session_start", (_event, ctx) => {
+    // Smart Compaction records this session's running terminals; keyed by session so an
+    // in-process subagent's terminals never replace or clear the parent's list.
+    unpublishTerminals?.();
+    unpublishTerminals = publishSessionLines(ACTIVE_TERMINALS, sessionKeyOf(ctx), () =>
+      (manager?.list() ?? [])
+        .filter((s) => s.status === "running")
+        .map((s) => `${s.id}: "${oneLine(s.title)}" (pid ${s.pid})`),
+    );
     if (ctx.hasUI) {
       ui = ctx.ui;
       activityContext = ctx;
@@ -231,11 +234,11 @@ export default function backgroundTerminals(pi: ExtensionAPI) {
         });
       } catch (error) {
         starting.delete(terminal.id);
+        // stop() marks the terminal as stopped by the caller, so its exit is not announced as a
+        // user terminal; the hold is released even if the kill itself fails.
+        await stop([terminal.id]).catch(() => undefined);
         modelOwned.delete(terminal.id);
-        await getManager()
-          .kill([terminal.id])
-          .catch(() => undefined);
-        consume(terminal.id);
+        releaseHold(terminal.id);
         throw error;
       }
       starting.delete(terminal.id);
@@ -352,13 +355,15 @@ export default function backgroundTerminals(pi: ExtensionAPI) {
       const current = getManager().get(params.id);
       if (!current) throw new Error(`Unknown background terminal "${params.id}".`);
       const cursor = params.cursor ?? current.output.cursor;
+      const writtenAt = current.output.totalBytes;
       const input = params.press_enter === false ? params.input : `${params.input}\r`;
       getManager().write(params.id, input);
-      const result = await getManager().read(params.id, {
-        cursor,
-        waitMs: params.wait_ms ?? 250,
-        signal,
-      });
+      // Wait for a response to this input, even when older output is still unread before the cursor;
+      // then return everything since the caller's cursor.
+      await getManager().read(params.id, { cursor: writtenAt, waitMs: params.wait_ms ?? 250, signal });
+      const result = await getManager().read(params.id, { cursor, signal });
+      // The model saw how the process ended, so its result must not arrive again later.
+      if (result.snapshot.status !== "running") consume(params.id);
       return {
         content: [{ type: "text", text: formatReadResult(result) }],
         details: {
@@ -613,6 +618,7 @@ export default function backgroundTerminals(pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", () => {
-    delete (globalThis as any).__pi_get_active_terminals;
+    unpublishTerminals?.();
+    unpublishTerminals = undefined;
   });
 }

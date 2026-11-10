@@ -84,6 +84,20 @@ for (const name of readdirSync(join(root, "skills"))) {
   }
 }
 
+for (const entry of manifest.pi?.themes ?? []) {
+  try {
+    const theme = JSON.parse(readFileSync(resolve(root, entry), "utf8"));
+    if (typeof theme.name !== "string" || !theme.name) errors.push(`Theme has no name: ${entry}`);
+  } catch {
+    errors.push(`Missing or invalid theme: ${entry}`);
+  }
+}
+const changelogPath = manifest.pi?.changelogPath;
+if (changelogPath) {
+  const target = resolve(root, changelogPath);
+  if (!existsSync(target) || !statSync(target).isFile()) errors.push(`Missing changelog: ${changelogPath}`);
+}
+
 const forbiddenExactNames = new Set([
   ".env",
   "auth.json",

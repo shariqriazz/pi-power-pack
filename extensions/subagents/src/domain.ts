@@ -13,7 +13,7 @@ import type { CapabilityMode, ChildSessionOptions, IsolationMode } from "./confi
 import type { WorktreeInfo } from "./worktree.ts";
 
 export type BackendName = "pi";
-export type SubagentOrigin = "model" | "btw" | "orchestration";
+export type SubagentOrigin = "model" | "btw";
 
 /** Pi thinking levels. Omitted means inherit the parent level. */
 export const REASONING_EFFORTS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
@@ -69,7 +69,7 @@ export interface SpawnTask {
   readonly persona?: string;
   readonly isolation: IsolationMode;
   readonly maxConcurrent: number;
-  /** Independent concurrency pool. Ordinary subagents use `default`; orchestration uses one pool per project. */
+  /** Independent concurrency pool; subagents without one share `default`. */
   readonly concurrencyGroup?: string;
   readonly worktree?: WorktreeInfo;
   /** Existing child session to continue with a new prompt. */

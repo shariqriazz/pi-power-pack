@@ -1,6 +1,6 @@
 {
   "name": "pi-power-pack",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "description": "Subagents, background terminals, smart compaction, goals, a task list, ask_user, image, video, and audio understanding, WebP images, and web search for the Pi coding agent. Formerly shariq-pi-extensions.",
   "license": "MIT",
   "author": "Shariq Riaz",

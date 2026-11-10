@@ -425,8 +425,14 @@ export default function mediaUnderstanding(pi: ExtensionAPI) {
   const views = new Map<string, number>();
   const followUpTools = [...(askImage ? ["ask_image"] : []), ...(images.enabled ? ["view_image"] : [])];
 
+  // The latest request belongs to the branch it was typed on.
+  pi.on("session_tree", () => {
+    lastUserText = "";
+  });
+
   pi.on("session_start", (_event, ctx) => {
     views.clear();
+    lastUserText = "";
     const missing = [
       (video.enabled && !askVideo && "video") || "",
       (audio.enabled && !askAudio && "audio") || "",
@@ -550,18 +556,22 @@ export default function mediaUnderstanding(pi: ExtensionAPI) {
           );
         }
         const notes: string[] = [];
-        const readable = await providerSafe({
-          type: "image",
-          data: source.bytes.toString("base64"),
-          mimeType: source.mimeType,
-        });
-        let bytes = Buffer.from(readable.data, "base64");
-        let mimeType = readable.mimeType;
+        let bytes: Buffer;
+        let mimeType: string;
         if (params.region) {
+          // The crop is already PNG, so the full image needs no conversion first.
           const crop = await cropImage(source.bytes, params.region);
           bytes = Buffer.from(crop.image.data, "base64");
           mimeType = crop.image.mimeType;
           notes.push(crop.note);
+        } else {
+          const readable = await providerSafe({
+            type: "image",
+            data: source.bytes.toString("base64"),
+            mimeType: source.mimeType,
+          });
+          bytes = Buffer.from(readable.data, "base64");
+          mimeType = readable.mimeType;
         }
         const resized = await resizeImage(
           bytes,

@@ -526,3 +526,43 @@ test("accepts objectives through 20,000 Unicode characters", async () => {
   );
   await h.shutdown();
 });
+
+test("retried errors, repeated resumes, and running subagents keep continuation honest", async () => {
+  const { publishSessionLines, RUNNING_SUBAGENTS } = await import("../shared/session-published.ts");
+  const h = harness();
+  await h.emit("session_start", { reason: "startup" });
+  await h.tools.get("create_goal").execute("c1", { objective: "Ship it" }, undefined, undefined, h.ctx);
+  const goalNow = async () =>
+    (await h.tools.get("get_goal").execute("g", {}, undefined, undefined, h.ctx)).details.goal;
+
+  // agent_end fires before Pi retries a failed request; it is not a no-progress turn.
+  await h.emit("agent_start");
+  await h.emit("agent_end", { messages: [{ role: "assistant", stopReason: "error", errorMessage: "HTTP 500" }] });
+  assert.equal((await goalNow()).continuationSuppressed, null);
+
+  // An explicit resume always sends its continuation, even when nothing changed in between.
+  await h.commands.get("goal").handler("pause", h.ctx);
+  let sentBefore = h.sent.length;
+  await h.commands.get("goal").handler("resume", h.ctx);
+  await h.commands.get("goal").handler("pause", h.ctx);
+  await h.commands.get("goal").handler("resume", h.ctx);
+  assert.equal(h.sent.length, sentBefore + 2);
+
+  // While a subagent of this session runs, its result starts the next turn instead of a continuation.
+  const unpublish = publishSessionLines(RUNNING_SUBAGENTS, h.ctx.sessionManager, () => ['sa-1: "build" (pi)']);
+  sentBefore = h.sent.length;
+  await h.emit("agent_start");
+  await h.emit("tool_execution_start", { toolName: "spawn_agent" });
+  await h.emit("agent_end", { messages: [] });
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.equal(h.sent.length, sentBefore);
+  unpublish();
+  await h.emit("agent_start");
+  await h.emit("tool_execution_start", { toolName: "read" });
+  // A real turn records usage, so its continuation prompt differs from the previous one.
+  h.addAssistant({ input: 50, output: 5 });
+  await h.emit("agent_end", { messages: [] });
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.equal(h.sent.length, sentBefore + 1);
+  await h.shutdown();
+});

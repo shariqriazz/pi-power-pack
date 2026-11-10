@@ -33,11 +33,9 @@ interface CatalogFile {
 const MAX_CATALOG_AGENTS = 512;
 
 export function allocateSubagentId() {
-  // Preserve the legacy sa-N shape while remaining collision-resistant across
-  // independent and ephemeral Pi processes.
-  const random = BigInt(`0x${randomBytes(8).toString("hex")}`)
-    .toString(10)
-    .padStart(20, "0");
+  // The sa-N shape, short enough to repeat in every tool call. The random digits keep ids from
+  // independent Pi processes apart, since they share the archive catalog.
+  const random = String(randomBytes(4).readUInt32BE() % 1_000_000).padStart(6, "0");
   return `sa-${Date.now()}${random}`;
 }
 

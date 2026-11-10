@@ -177,6 +177,8 @@ describe("smart-compaction prompt, sanitization, and XML escaping", () => {
     const sanitized = sanitizeTagContent(malicious);
     assert.ok(!sanitized.includes("</conversation>"));
     assert.ok(sanitized.includes("<\\/conversation>"));
+    const wrappers = sanitizeTagContent("a </kept-start> b <protected-facts> c </previous-summary> d <conversation>");
+    assert.equal(wrappers, "a <\\/kept-start> b <\\protected-facts> c <\\/previous-summary> d <\\conversation>");
   });
 
   it("escapes XML characters in file paths", () => {
@@ -1271,5 +1273,25 @@ describe("smart-compaction same-model structured tail", () => {
       assert.equal(calls[0]!.context.messages.length, 1);
       assert.equal(calls[0]!.context.tools, undefined);
     }
+  });
+});
+
+describe("smart-compaction running work per session", () => {
+  it("lists only the compacting session's terminals and subagents, even after a child shuts down", async () => {
+    const { publishSessionLines, ACTIVE_TERMINALS, RUNNING_SUBAGENTS } = await import("../shared/session-published.ts");
+    const { getActiveBackgroundProcesses, getRunningSubagents } = await import("./engine.ts");
+    const parent = { sessionManager: {} };
+    const child = { sessionManager: {} };
+    publishSessionLines(ACTIVE_TERMINALS, parent.sessionManager, () => ['term-1: "dev server" (pid 1)']);
+    publishSessionLines(RUNNING_SUBAGENTS, parent.sessionManager, () => ['sa-1: "review" (pi)']);
+    // An in-process child publishes its own lists and removes them when it shuts down.
+    const removeChildTerminals = publishSessionLines(ACTIVE_TERMINALS, child.sessionManager, () => ["term-9: child"]);
+    const removeChildAgents = publishSessionLines(RUNNING_SUBAGENTS, child.sessionManager, () => []);
+    assert.deepEqual(getActiveBackgroundProcesses(child), ["term-9: child"]);
+    removeChildTerminals();
+    removeChildAgents();
+    assert.deepEqual(getActiveBackgroundProcesses(parent), ['term-1: "dev server" (pid 1)']);
+    assert.deepEqual(getRunningSubagents(parent), ['sa-1: "review" (pi)']);
+    assert.deepEqual(getActiveBackgroundProcesses(child), []);
   });
 });

@@ -14,6 +14,7 @@ import type {
   GoalStatus,
   GoalUpdateParams,
 } from "./types.ts";
+import { readSessionLines, RUNNING_SUBAGENTS, sessionKeyOf } from "../shared/session-published.ts";
 
 const STATUS_ONLY_TOOL_NAMES = new Set([
   "get_goal",
@@ -651,7 +652,10 @@ Status is budget_limited. Start no new substantive work; promptly summarize prog
         goal.status !== "active" ||
         goal.continuationSuppressed ||
         !ctx.isIdle() ||
-        ctx.hasPendingMessages()
+        ctx.hasPendingMessages() ||
+        // A running subagent's result starts the next turn; continuing now would only produce a
+        // waiting turn that counts as no progress. Terminals are not counted: servers never exit.
+        readSessionLines(RUNNING_SUBAGENTS, sessionKeyOf(ctx)).length > 0
       )
         return;
       sendGoalContext("continuation");
@@ -672,14 +676,12 @@ Status is budget_limited. Start no new substantive work; promptly summarize prog
       current.blockedSignature = null;
     }, ctx);
     if (ctx.hasUI) ctx.ui.notify(budgetReached ? "Goal remains limited by budget" : "Goal active", "info");
+    // The duplicate check guards automatic continuations; an explicit resume must always send.
+    lastContextText = null;
     if (!budgetReached) sendGoalContext("continuation");
   }
 
-  async function replaceExistingGoal(
-    ctx: ExtensionContext,
-    objective: string,
-    tokenBudget: number | null,
-  ): Promise<boolean> {
+  async function replaceExistingGoal(ctx: ExtensionContext, objective: string): Promise<boolean> {
     if (!goal || goal.status === "complete") return true;
     if (!ctx.hasUI) return false;
     return ctx.ui.confirm("Replace goal?", `New objective: ${objective}\n\nReplace the current goal and start it now?`);
@@ -700,7 +702,7 @@ Status is budget_limited. Start no new substantive work; promptly summarize prog
       ctx.ui.notify(error, "error");
       return;
     }
-    if (!(await replaceExistingGoal(ctx, parsed.objective, parsed.tokenBudget))) {
+    if (!(await replaceExistingGoal(ctx, parsed.objective))) {
       ctx.ui.notify("Goal unchanged", "info");
       return;
     }
@@ -789,6 +791,12 @@ Status is budget_limited. Start no new substantive work; promptly summarize prog
     const runError = lastAssistant?.stopReason === "error" ? (lastAssistant.errorMessage ?? "") : "";
     if (/abort|interrupt|cancel/i.test(runError)) {
       pauseAfterRun("interrupted", "run interrupted", ctx);
+      return;
+    }
+    // agent_end fires before Pi retries a failed request, so an error here is not final. It must not
+    // count as a blocked or no-progress turn; agent_before_settle classifies it after the retries.
+    if (lastAssistant?.stopReason === "error") {
+      updateStatus(ctx);
       return;
     }
 

@@ -64,11 +64,13 @@ test("local, private, and metadata destinations are blocked by default", async (
     "fe80::1",
     "::ffff:127.0.0.1",
     "::ffff:7f00:1",
+    "64:ff9b::7f00:1",
+    "64:ff9b::a00:1",
     "0.0.0.0",
   ]) {
     assert.equal(isBlockedAddress(address), true, address);
   }
-  for (const address of ["8.8.8.8", "1.1.1.1", "2606:4700:4700::1111"]) {
+  for (const address of ["8.8.8.8", "1.1.1.1", "2606:4700:4700::1111", "64:ff9b::808:808"]) {
     assert.equal(isBlockedAddress(address), false, address);
   }
 });
