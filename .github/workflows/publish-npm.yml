@@ -35,5 +35,5 @@ jobs:
             echo "Version $CURRENT_VERSION is already published on npm. Skipping publish step."
           else
             echo "Publishing version $CURRENT_VERSION..."
-            mise exec --locked -- npm publish --access public --provenance
+            mise exec --locked -- npm publish --access public --provenance --loglevel verbose
           fi
